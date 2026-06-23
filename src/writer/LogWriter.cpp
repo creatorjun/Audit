@@ -125,21 +125,21 @@ std::string LogWriter::buildJson(const AuditRecord& r) {
 
     std::ostringstream j;
     j << "{";
-    j << "\"ts\":\"",     << formatTimestamp(r.timestamp) << "\",";
-    j << "\"serial\":"    << r.serial              << ",";
-    j << "\"pid\":"       << r.pid                 << ",";
-    j << "\"ppid\":"      << r.ppid                << ",";
-    j << "\"uid\":"       << r.uid                 << ",";
-    j << "\"uid_name\":\"" << escapeJson(uidName(r.uid))  << "\",";
-    j << "\"auid\":"      << (r.auid == static_cast<uid_t>(-1) ? 4294967295u : (unsigned)r.auid) << ",";
+    j << "\"ts\":\""        << formatTimestamp(r.timestamp) << "\",";
+    j << "\"serial\":"      << r.serial              << ",";
+    j << "\"pid\":"         << r.pid                 << ",";
+    j << "\"ppid\":"        << r.ppid                << ",";
+    j << "\"uid\":"         << r.uid                 << ",";
+    j << "\"uid_name\":\""  << escapeJson(uidName(r.uid))  << "\",";
+    j << "\"auid\":"        << (r.auid == static_cast<uid_t>(-1) ? 4294967295u : (unsigned)r.auid) << ",";
     j << "\"auid_name\":\"" << escapeJson(uidName(r.auid)) << "\",";
-    j << "\"comm\":\""     << escapeJson(r.comm)    << "\",";
-    j << "\"exe\":\""      << escapeJson(r.exe)     << "\",";
-    j << "\"cmdline\":\""  << escapeJson(r.cmdline) << "\",";
-    j << "\"cwd\":\""      << escapeJson(r.cwd)     << "\",";
-    j << "\"tty\":\""      << escapeJson(r.tty)     << "\",";
-    j << "\"hostname\":\"" << escapeJson(r.hostname) << "\",";
-    j << "\"success\":"    << (r.success ? "true" : "false");
+    j << "\"comm\":\""      << escapeJson(r.comm)    << "\",";
+    j << "\"exe\":\""       << escapeJson(r.exe)     << "\",";
+    j << "\"cmdline\":\""   << escapeJson(r.cmdline) << "\",";
+    j << "\"cwd\":\""       << escapeJson(r.cwd)     << "\",";
+    j << "\"tty\":\""       << escapeJson(r.tty)     << "\",";
+    j << "\"hostname\":\""  << escapeJson(r.hostname) << "\",";
+    j << "\"success\":"     << (r.success ? "true" : "false");
     j << "}";
     return j.str();
 }
