@@ -1,8 +1,6 @@
-// systemd/audit-daemon.service
 [Unit]
 Description=Audit Command Tracking Daemon (standalone mode)
 After=network.target
-ConditionPathExists=!/etc/audisp/plugins.d/audit-daemon.conf
 
 [Service]
 Type=simple
