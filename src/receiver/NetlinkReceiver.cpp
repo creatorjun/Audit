@@ -1,12 +1,13 @@
 // src/receiver/NetlinkReceiver.cpp
 #include "NetlinkReceiver.hpp"
 #include <libaudit.h>
+#include <linux/audit.h>
+#include <linux/netlink.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <cstring>
 #include <syslog.h>
 #include <fcntl.h>
-#include <sstream>
 
 NetlinkReceiver::NetlinkReceiver(RawEventCallback cb, ReceiverMode mode)
     : m_callback(std::move(cb))
@@ -133,10 +134,8 @@ void NetlinkReceiver::runDispatcher() {
 }
 
 bool NetlinkReceiver::parseLine(const std::string& line, AuditRawEvent& ev) {
-    // auditd dispatcher format: "type=SYSCALL msg=audit(1234567890.123:456): ..."
     auto typePos = line.find("type=");
     if (typePos == std::string::npos) return false;
-
     auto typeEnd = line.find(' ', typePos);
     if (typeEnd == std::string::npos) return false;
     std::string typeName = line.substr(typePos + 5, typeEnd - typePos - 5);
@@ -148,7 +147,6 @@ bool NetlinkReceiver::parseLine(const std::string& line, AuditRawEvent& ev) {
     else if (typeName == "EOE")     ev.type = AUDIT_EOE;
     else return false;
 
-    // serial: msg=audit(timestamp:SERIAL)
     auto msgPos = line.find("msg=audit(");
     if (msgPos == std::string::npos) return false;
     auto colonPos = line.find(':', msgPos);
@@ -162,7 +160,7 @@ bool NetlinkReceiver::parseLine(const std::string& line, AuditRawEvent& ev) {
     }
 
     auto dataStart = line.find(':', parenPos);
-    if (dataStart != std::string::npos) {
+    if (dataStart != std::string::npos && dataStart + 2 <= line.size()) {
         ev.data = line.substr(dataStart + 2);
     }
     return true;
@@ -180,25 +178,34 @@ void NetlinkReceiver::runStandalone() {
         }
         for (int i = 0; i < n; ++i) {
             if (!(events[i].events & EPOLLIN)) continue;
+
             struct audit_reply reply;
             memset(&reply, 0, sizeof(reply));
             int rc = audit_get_reply(m_auditFd, &reply, GET_REPLY_NONBLOCKING, 0);
             if (rc <= 0) continue;
 
-            if (reply.type == AUDIT_EOE    ||
-                reply.type == AUDIT_SYSCALL ||
-                reply.type == AUDIT_EXECVE  ||
-                reply.type == AUDIT_CWD     ||
-                reply.type == AUDIT_PATH) {
-
-                AuditRawEvent ev;
-                ev.type   = reply.type;
-                ev.serial = reply.serial;
-                if (reply.msg.data && reply.len > 0) {
-                    ev.data.assign(reply.msg.data, reply.len);
-                }
-                m_callback(ev);
+            if (reply.type != AUDIT_EOE    &&
+                reply.type != AUDIT_SYSCALL &&
+                reply.type != AUDIT_EXECVE  &&
+                reply.type != AUDIT_CWD     &&
+                reply.type != AUDIT_PATH) {
+                continue;
             }
+
+            AuditRawEvent ev;
+            ev.type = reply.type;
+
+            // serial은 netlink 헤더의 nlmsg_seq 필드에서 추출
+            if (reply.nlh) {
+                ev.serial = static_cast<uint64_t>(reply.nlh->nlmsg_seq);
+            } else {
+                ev.serial = 0;
+            }
+
+            if (reply.msg.data && reply.len > 0) {
+                ev.data.assign(reply.msg.data, reply.len);
+            }
+            m_callback(ev);
         }
     }
 }
