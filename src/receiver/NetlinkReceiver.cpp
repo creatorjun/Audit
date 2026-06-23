@@ -73,7 +73,7 @@ void NetlinkReceiver::stop() {
     m_running = false;
     m_queueCv.notify_all();
 
-    if (m_ioThread.joinable())      m_ioThread.join();
+    if (m_ioThread.joinable())       m_ioThread.join();
     if (m_dispatchThread.joinable()) m_dispatchThread.join();
 
     if (m_epollFd >= 0) { close(m_epollFd); m_epollFd = -1; }
@@ -185,6 +185,8 @@ void NetlinkReceiver::runDispatcher() {
 }
 
 bool NetlinkReceiver::parseLine(const std::string& line, AuditRawEvent& ev) {
+    ev.timestamp = {};
+
     auto typePos = line.find("type=");
     if (typePos == std::string::npos) return false;
     auto typeEnd = line.find(' ', typePos);
@@ -200,11 +202,15 @@ bool NetlinkReceiver::parseLine(const std::string& line, AuditRawEvent& ev) {
 
     auto msgPos = line.find("msg=audit(");
     if (msgPos == std::string::npos) return false;
-    auto colonPos = line.find(':', msgPos);
-    auto parenPos = line.find(')', colonPos);
+    auto tsStart  = msgPos + 10;
+    auto colonPos = line.find(':', tsStart);
+    auto parenPos = line.find(')', colonPos != std::string::npos ? colonPos : tsStart);
     if (colonPos == std::string::npos || parenPos == std::string::npos) return false;
 
     try {
+        double ts = std::stod(line.substr(tsStart, colonPos - tsStart));
+        ev.timestamp.tv_sec  = static_cast<time_t>(ts);
+        ev.timestamp.tv_nsec = static_cast<long>((ts - static_cast<double>(ev.timestamp.tv_sec)) * 1e9);
         ev.serial = std::stoull(line.substr(colonPos + 1, parenPos - colonPos - 1));
     } catch (...) {
         return false;
@@ -233,8 +239,9 @@ void NetlinkReceiver::runStandalone() {
             if (audit_get_reply(m_auditFd, &reply, GET_REPLY_NONBLOCKING, 0) <= 0) continue;
 
             AuditRawEvent rawEv;
-            rawEv.type   = reply.type;
-            rawEv.serial = reply.nlh->nlmsg_seq;
+            rawEv.type      = reply.type;
+            rawEv.serial    = reply.nlh->nlmsg_seq;
+            rawEv.timestamp = {};
             if (reply.message) rawEv.data = std::string(reply.message);
 
             enqueueRaw(m_queueMutex, m_queueCv,
