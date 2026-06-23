@@ -45,6 +45,16 @@ void LogWriter::enqueue(const AuditRecord& record) {
     m_cv.notify_one();
 }
 
+void LogWriter::enqueue(AuditRecord&& record) {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    if (m_queue.size() >= m_maxQueue) {
+        syslog(LOG_WARNING, "LogWriter queue full, dropping record");
+        return;
+    }
+    m_queue.push(std::move(record));
+    m_cv.notify_one();
+}
+
 void LogWriter::run() {
     while (m_running || !m_queue.empty()) {
         std::unique_lock<std::mutex> lock(m_mutex);
@@ -91,18 +101,40 @@ void LogWriter::purgeOldLogs() {
     DIR* dir = opendir(m_logDir.c_str());
     if (!dir) return;
 
-    time_t cutoff = time(nullptr) - static_cast<time_t>(m_retentionDays) * 86400;
     struct dirent* ent;
     while ((ent = readdir(dir)) != nullptr) {
         std::string name(ent->d_name);
         if (name.size() != 14 || name.substr(10) != ".log") continue;
-        std::string path = m_logDir + "/" + name;
-        struct stat st{};
-        if (stat(path.c_str(), &st) == 0 && st.st_mtime < cutoff) {
+
+        struct tm tm_info{};
+        if (strptime(name.substr(0, 10).c_str(), "%Y-%m-%d", &tm_info) == nullptr) continue;
+        tm_info.tm_hour = 0; tm_info.tm_min = 0; tm_info.tm_sec = 0; tm_info.tm_isdst = -1;
+        time_t fileDate = mktime(&tm_info);
+        if (fileDate == static_cast<time_t>(-1)) continue;
+
+        time_t cutoff = time(nullptr) - static_cast<time_t>(m_retentionDays) * 86400;
+        if (fileDate < cutoff) {
+            std::string path = m_logDir + "/" + name;
             unlink(path.c_str());
         }
     }
     closedir(dir);
+}
+
+const std::string& LogWriter::cachedUidName(uid_t uid) {
+    static const std::string kUnset = "unset";
+    if (uid == static_cast<uid_t>(-1)) return kUnset;
+
+    auto now = std::chrono::steady_clock::now();
+    auto it  = m_uidCache.find(uid);
+    if (it != m_uidCache.end() && it->second.expiresAt > now) {
+        return it->second.name;
+    }
+
+    struct passwd* pw = getpwuid(uid);
+    std::string name  = pw ? std::string(pw->pw_name) : std::to_string(uid);
+    m_uidCache[uid]   = { name, now + std::chrono::seconds(UID_CACHE_TTL_S) };
+    return m_uidCache[uid].name;
 }
 
 std::string LogWriter::buildJson(const AuditRecord& r) {
@@ -117,12 +149,6 @@ std::string LogWriter::buildJson(const AuditRecord& r) {
         return oss.str();
     };
 
-    auto uidName = [](uid_t uid) -> std::string {
-        if (uid == static_cast<uid_t>(-1)) return "unset";
-        struct passwd* pw = getpwuid(uid);
-        return pw ? std::string(pw->pw_name) : std::to_string(uid);
-    };
-
     std::ostringstream j;
     j << "{";
     j << "\"ts\":\""        << formatTimestamp(r.timestamp) << "\",";
@@ -130,9 +156,9 @@ std::string LogWriter::buildJson(const AuditRecord& r) {
     j << "\"pid\":"         << r.pid                 << ",";
     j << "\"ppid\":"        << r.ppid                << ",";
     j << "\"uid\":"         << r.uid                 << ",";
-    j << "\"uid_name\":\""  << escapeJson(uidName(r.uid))  << "\",";
+    j << "\"uid_name\":\""  << escapeJson(cachedUidName(r.uid))  << "\",";
     j << "\"auid\":"        << (r.auid == static_cast<uid_t>(-1) ? 4294967295u : (unsigned)r.auid) << ",";
-    j << "\"auid_name\":\"" << escapeJson(uidName(r.auid)) << "\",";
+    j << "\"auid_name\":\"" << escapeJson(cachedUidName(r.auid)) << "\",";
     j << "\"comm\":\""      << escapeJson(r.comm)    << "\",";
     j << "\"exe\":\""       << escapeJson(r.exe)     << "\",";
     j << "\"cmdline\":\""   << escapeJson(r.cmdline) << "\",";
