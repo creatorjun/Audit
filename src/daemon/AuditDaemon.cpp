@@ -41,30 +41,24 @@ bool AuditDaemon::loadConfig(const std::string& path, DaemonConfig& cfg) {
         if (pos == std::string::npos) continue;
         std::string key = line.substr(0, pos);
         std::string val = line.substr(pos + 1);
-        if      (key == "log_dir")                   cfg.logDir                  = val;
-        else if (key == "log_retention_days")        cfg.retentionDays           = std::stoi(val);
-        else if (key == "pid_file")                  cfg.pidFile                 = val;
-        else if (key == "filter_system_daemons")     cfg.filterDaemons           = (val == "true");
-        else if (key == "queue_max_size")            cfg.queueMaxSize            = std::stoull(val);
-        else if (key == "resource_log_interval_sec") cfg.resourceLogIntervalSec = std::stoi(val);
-        else if (key == "mode") {
-            if (val == "standalone") cfg.mode = ReceiverMode::Standalone;
-            else                     cfg.mode = ReceiverMode::Dispatcher;
-        }
+        if      (key == "log_dir")                    cfg.logDir                 = val;
+        else if (key == "log_retention_days")         cfg.retentionDays          = std::stoi(val);
+        else if (key == "pid_file")                   cfg.pidFile                = val;
+        else if (key == "filter_system_daemons")      cfg.filterDaemons          = (val == "true");
+        else if (key == "queue_max_size")             cfg.queueMaxSize           = std::stoull(val);
+        else if (key == "resource_log_interval_sec")  cfg.resourceLogIntervalSec = std::stoi(val);
     }
     return true;
 }
 
 void AuditDaemon::run() {
     writePid();
-    syslog(LOG_INFO, "audit-daemon started (pid=%d, mode=%s)",
-           getpid(),
-           m_cfg.mode == ReceiverMode::Dispatcher ? "dispatcher" : "standalone");
+    syslog(LOG_INFO, "audit-daemon started (pid=%d, mode=dispatcher)", getpid());
 
     m_writer = std::make_unique<LogWriter>(m_cfg.logDir, m_cfg.retentionDays, m_cfg.queueMaxSize);
 
-    bool        filterDaemons = m_cfg.filterDaemons;
-    LogWriter*  writerPtr     = m_writer.get();
+    bool       filterDaemons = m_cfg.filterDaemons;
+    LogWriter* writerPtr     = m_writer.get();
 
     m_parser = std::make_unique<EventParser>([writerPtr, filterDaemons](const AuditRecord& rec) {
         if (filterDaemons && rec.auid == static_cast<uid_t>(-1)) return;
@@ -73,9 +67,7 @@ void AuditDaemon::run() {
 
     EventParser* parserPtr = m_parser.get();
     m_receiver = std::make_unique<NetlinkReceiver>(
-        [parserPtr](const AuditRawEvent& ev) { parserPtr->onRawEvent(ev); },
-        m_cfg.mode,
-        m_cfg.queueMaxSize
+        [parserPtr](const AuditRawEvent& ev) { parserPtr->onRawEvent(ev); }
     );
 
     m_running = true;
@@ -91,14 +83,7 @@ void AuditDaemon::run() {
 
     m_resourceThread = std::thread(&AuditDaemon::resourceMonitorLoop, this);
 
-    if (!m_receiver->start()) {
-        syslog(LOG_ERR, "audit-daemon: receiver failed to start");
-        m_running = false;
-        m_resourceThread.join();
-        g_daemon = nullptr;
-        m_writer->stop();
-        return;
-    }
+    m_receiver->start();
 
     m_running = false;
     if (m_resourceThread.joinable()) m_resourceThread.join();
@@ -149,9 +134,9 @@ bool AuditDaemon::collectResource(ResourceSnapshot& snap) {
         }
     }
 
-    std::string statPath1 = "/proc/" + std::to_string(pid) + "/stat";
+    std::string statPath = "/proc/" + std::to_string(pid) + "/stat";
     auto readStat = [&](unsigned long long& utime, unsigned long long& stime) -> bool {
-        std::ifstream sf(statPath1);
+        std::ifstream sf(statPath);
         if (!sf.is_open()) return false;
         std::string s;
         std::getline(sf, s);
@@ -168,15 +153,13 @@ bool AuditDaemon::collectResource(ResourceSnapshot& snap) {
         return true;
     };
 
-    std::string uptimePath = "/proc/uptime";
     auto readUptime = [&](double& uptime) -> bool {
-        std::ifstream uf(uptimePath);
+        std::ifstream uf("/proc/uptime");
         if (!uf.is_open()) return false;
         return static_cast<bool>(uf >> uptime);
     };
 
-    unsigned long long utime1 = 0, stime1 = 0;
-    unsigned long long utime2 = 0, stime2 = 0;
+    unsigned long long utime1 = 0, stime1 = 0, utime2 = 0, stime2 = 0;
     double uptime1 = 0, uptime2 = 0;
 
     if (!readStat(utime1, stime1) || !readUptime(uptime1)) {
@@ -194,9 +177,9 @@ bool AuditDaemon::collectResource(ResourceSnapshot& snap) {
     long clkTck = sysconf(_SC_CLK_TCK);
     if (clkTck <= 0) clkTck = 100;
 
-    double deltaProc   = static_cast<double>((utime2 + stime2) - (utime1 + stime1)) / clkTck;
-    double deltaWall   = uptime2 - uptime1;
-    snap.cpuPercent    = (deltaWall > 0.0) ? (deltaProc / deltaWall * 100.0) : 0.0;
+    double deltaProc = static_cast<double>((utime2 + stime2) - (utime1 + stime1)) / clkTck;
+    double deltaWall = uptime2 - uptime1;
+    snap.cpuPercent  = (deltaWall > 0.0) ? (deltaProc / deltaWall * 100.0) : 0.0;
 
     return true;
 }

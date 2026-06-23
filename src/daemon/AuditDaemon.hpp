@@ -4,10 +4,10 @@
 #include <memory>
 #include <thread>
 #include <atomic>
-#include "../receiver/NetlinkReceiver.hpp"
 
 class EventParser;
 class LogWriter;
+class NetlinkReceiver;
 
 struct DaemonConfig {
     std::string  logDir          = "/var/log/audit-daemon";
@@ -15,7 +15,6 @@ struct DaemonConfig {
     int          retentionDays   = 90;
     bool         filterDaemons   = true;
     size_t       queueMaxSize    = 8192;
-    ReceiverMode mode            = ReceiverMode::Dispatcher;
     int          resourceLogIntervalSec = 600;
 };
 
