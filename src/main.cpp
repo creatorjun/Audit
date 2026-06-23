@@ -1,21 +1,13 @@
 // src/main.cpp
 #include "daemon/AuditDaemon.hpp"
 #include <syslog.h>
-#include <signal.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <cstdlib>
 
-static void signalHandler(int sig) {
-    if (sig == SIGTERM || sig == SIGINT) {
-        AuditDaemon::requestStop();
-    }
-}
-
 static void daemonizeIfStandalone(ReceiverMode mode) {
     if (mode == ReceiverMode::Dispatcher) {
-        // dispatcher 모드: auditd가 직접 fork하여 실행하므로 daemonize 불필요
         return;
     }
 
@@ -50,14 +42,6 @@ int main(int argc, char* argv[]) {
     AuditDaemon::loadConfig(configPath, cfg);
 
     daemonizeIfStandalone(cfg.mode);
-
-    struct sigaction sa{};
-    sa.sa_handler = signalHandler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    sigaction(SIGTERM, &sa, nullptr);
-    sigaction(SIGINT,  &sa, nullptr);
-    signal(SIGHUP, SIG_IGN);
 
     AuditDaemon daemon(cfg);
     daemon.run();
