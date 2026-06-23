@@ -2,6 +2,8 @@
 #pragma once
 #include <string>
 #include <memory>
+#include <thread>
+#include <atomic>
 #include "../receiver/NetlinkReceiver.hpp"
 
 class EventParser;
@@ -14,6 +16,7 @@ struct DaemonConfig {
     bool         filterDaemons   = true;
     size_t       queueMaxSize    = 8192;
     ReceiverMode mode            = ReceiverMode::Dispatcher;
+    int          resourceLogIntervalSec = 600;
 };
 
 class AuditDaemon {
@@ -28,9 +31,19 @@ public:
 private:
     void writePid();
     void removePid();
+    void resourceMonitorLoop();
+
+    struct ResourceSnapshot {
+        double cpuPercent;
+        long   rssKb;
+        long   vmRssKb;
+    };
+    bool collectResource(ResourceSnapshot& snap);
 
     DaemonConfig                     m_cfg;
     std::unique_ptr<LogWriter>       m_writer;
     std::unique_ptr<EventParser>     m_parser;
     std::unique_ptr<NetlinkReceiver> m_receiver;
+    std::thread                      m_resourceThread;
+    std::atomic<bool>                m_running{false};
 };
