@@ -3,6 +3,7 @@
 #include <libaudit.h>
 #include <syslog.h>
 #include <pwd.h>
+#include <cmath>
 #include <cstring>
 #include <sstream>
 
@@ -70,8 +71,10 @@ void EventParser::parseSyscall(PartialRecord& pr, const AuditRawEvent& ev) {
     pr.hasSyscall = true;
     auto& r = pr.record;
 
-    if (ev.timestamp.tv_sec != 0) {
-        r.timestamp = ev.timestamp;
+    if (ev.timestamp != 0.0) {
+        r.timestamp.tv_sec  = static_cast<time_t>(ev.timestamp);
+        r.timestamp.tv_nsec = static_cast<long>(
+            std::fmod(ev.timestamp, 1.0) * 1e9);
     }
 
     const std::string& data = ev.data;
