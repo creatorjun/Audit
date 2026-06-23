@@ -1,0 +1,17 @@
+# systemd/audit-daemon.service
+[Unit]
+Description=Audit Command Tracking Daemon
+After=network.target auditd.service
+
+[Service]
+Type=forking
+PIDFile=/var/run/audit-daemon.pid
+ExecStart=/usr/local/sbin/audit-daemon
+Restart=always
+RestartSec=3
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

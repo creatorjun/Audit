@@ -1,0 +1,40 @@
+// src/writer/LogWriter.hpp
+#pragma once
+#include "../model/AuditRecord.hpp"
+#include <string>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <atomic>
+
+class LogWriter {
+public:
+    explicit LogWriter(const std::string& logDir, int retentionDays = 90, size_t maxQueue = 8192);
+    ~LogWriter();
+
+    void enqueue(const AuditRecord& record);
+    void stop();
+
+private:
+    void run();
+    void writeRecord(const AuditRecord& record);
+    void rotateIfNeeded();
+    void purgeOldLogs();
+    std::string buildJson(const AuditRecord& r);
+    std::string currentDateStr();
+    std::string formatTimestamp(const timespec& ts);
+
+    std::string                 m_logDir;
+    int                         m_retentionDays;
+    size_t                      m_maxQueue;
+    std::string                 m_currentDate;
+    std::string                 m_currentPath;
+    int                         m_fd;
+
+    std::thread                 m_thread;
+    std::mutex                  m_mutex;
+    std::condition_variable     m_cv;
+    std::queue<AuditRecord>     m_queue;
+    std::atomic<bool>           m_running;
+};
