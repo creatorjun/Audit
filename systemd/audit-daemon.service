@@ -1,16 +1,15 @@
+# systemd/audit-daemon.service
 [Unit]
-Description=Audit Command Tracking Daemon (standalone mode)
-After=network.target
+Description=Audit Command Tracking Daemon (dispatcher mode)
+After=auditd.service
+PartOf=auditd.service
 
 [Service]
 Type=simple
 ExecStart=/usr/local/sbin/audit-daemon /etc/audit-daemon/audit-daemon.conf
-Restart=always
-RestartSec=3
+Restart=no
 User=root
+StandardInput=null
 StandardOutput=journal
 StandardError=journal
 KillMode=process
-
-[Install]
-WantedBy=multi-user.target
