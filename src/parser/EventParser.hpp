@@ -31,6 +31,7 @@ private:
     void parsePath(PartialRecord& pr,    const std::string& data);
 
     std::string extractField(const std::string& data, const std::string& key);
+    std::string extractFieldExact(const std::string& data, const std::string& key);
     std::string decodeHexOrQuoted(const std::string& val);
     uid_t       resolveUid(const std::string& s);
     std::string uidToName(uid_t uid);
