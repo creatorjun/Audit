@@ -7,9 +7,12 @@
 #include <fstream>
 #include <signal.h>
 #include <unistd.h>
-#include <atomic>
 
-static std::atomic<bool> g_stop{false};
+static AuditDaemon* g_daemon = nullptr;
+
+static void sigHandler(int) {
+    if (g_daemon) g_daemon->requestStop();
+}
 
 AuditDaemon::AuditDaemon(DaemonConfig cfg)
     : m_cfg(std::move(cfg))
@@ -20,7 +23,7 @@ AuditDaemon::~AuditDaemon() {
 }
 
 void AuditDaemon::requestStop() {
-    g_stop = true;
+    if (m_receiver) m_receiver->stop();
 }
 
 bool AuditDaemon::loadConfig(const std::string& path, DaemonConfig& cfg) {
@@ -65,11 +68,28 @@ void AuditDaemon::run() {
     EventParser* parserPtr = m_parser.get();
     m_receiver = std::make_unique<NetlinkReceiver>(
         [parserPtr](const AuditRawEvent& ev) { parserPtr->onRawEvent(ev); },
-        m_cfg.mode
+        m_cfg.mode,
+        m_cfg.queueMaxSize
     );
 
-    m_receiver->start();
+    g_daemon = this;
 
+    struct sigaction sa{};
+    sa.sa_handler = sigHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGTERM, &sa, nullptr);
+    sigaction(SIGINT,  &sa, nullptr);
+    signal(SIGHUP, SIG_IGN);
+
+    if (!m_receiver->start()) {
+        syslog(LOG_ERR, "audit-daemon: receiver failed to start");
+        g_daemon = nullptr;
+        m_writer->stop();
+        return;
+    }
+
+    g_daemon = nullptr;
     syslog(LOG_INFO, "audit-daemon stopped");
     m_writer->stop();
 }
