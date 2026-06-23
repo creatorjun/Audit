@@ -6,7 +6,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <cstdlib>
-#include <iostream>
 
 static void signalHandler(int sig) {
     if (sig == SIGTERM || sig == SIGINT) {
@@ -14,16 +13,20 @@ static void signalHandler(int sig) {
     }
 }
 
-static bool daemonize() {
-    pid_t pid = fork();
-    if (pid < 0) return false;
-    if (pid > 0) exit(EXIT_SUCCESS);
+static void daemonizeIfStandalone(ReceiverMode mode) {
+    if (mode == ReceiverMode::Dispatcher) {
+        // dispatcher 모드: auditd가 직접 fork하여 실행하므로 daemonize 불필요
+        return;
+    }
 
-    if (setsid() < 0) return false;
+    pid_t pid = fork();
+    if (pid < 0) { exit(EXIT_FAILURE); }
+    if (pid > 0) { exit(EXIT_SUCCESS); }
+    if (setsid() < 0) { exit(EXIT_FAILURE); }
 
     pid = fork();
-    if (pid < 0) return false;
-    if (pid > 0) exit(EXIT_SUCCESS);
+    if (pid < 0) { exit(EXIT_FAILURE); }
+    if (pid > 0) { exit(EXIT_SUCCESS); }
 
     umask(0027);
     chdir("/");
@@ -35,7 +38,6 @@ static bool daemonize() {
         dup2(devNull, STDERR_FILENO);
         close(devNull);
     }
-    return true;
 }
 
 int main(int argc, char* argv[]) {
@@ -47,10 +49,7 @@ int main(int argc, char* argv[]) {
     DaemonConfig cfg;
     AuditDaemon::loadConfig(configPath, cfg);
 
-    if (!daemonize()) {
-        syslog(LOG_ERR, "daemonize failed");
-        return EXIT_FAILURE;
-    }
+    daemonizeIfStandalone(cfg.mode);
 
     struct sigaction sa{};
     sa.sa_handler = signalHandler;

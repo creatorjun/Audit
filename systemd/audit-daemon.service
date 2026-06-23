@@ -1,12 +1,16 @@
 # systemd/audit-daemon.service
+# dispatcher 모드에서는 auditd가 직접 프로세스를 관리하므로
+# standalone 모드 전용 서비스 파일입니다.
+# dispatcher 모드는 /etc/audisp/plugins.d/audit-daemon.conf 를 사용합니다.
 [Unit]
-Description=Audit Command Tracking Daemon
-After=network.target auditd.service
+Description=Audit Command Tracking Daemon (standalone mode)
+After=network.target
+ConditionPathExists=!/etc/audisp/plugins.d/audit-daemon.conf
 
 [Service]
 Type=forking
 PIDFile=/var/run/audit-daemon.pid
-ExecStart=/usr/local/sbin/audit-daemon
+ExecStart=/usr/local/sbin/audit-daemon /etc/audit-daemon/audit-daemon.conf
 Restart=always
 RestartSec=3
 User=root

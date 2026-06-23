@@ -4,6 +4,11 @@
 #include <string>
 #include <atomic>
 
+enum class ReceiverMode {
+    Standalone,
+    Dispatcher
+};
+
 struct AuditRawEvent {
     int         type;
     uint64_t    serial;
@@ -14,18 +19,23 @@ using RawEventCallback = std::function<void(const AuditRawEvent&)>;
 
 class NetlinkReceiver {
 public:
-    explicit NetlinkReceiver(RawEventCallback cb);
+    NetlinkReceiver(RawEventCallback cb, ReceiverMode mode);
     ~NetlinkReceiver();
 
     bool start();
     void stop();
 
 private:
-    void run();
+    void runStandalone();
+    void runDispatcher();
+
     bool setupAuditRules();
     void cleanupAuditRules();
 
+    bool parseLine(const std::string& line, AuditRawEvent& ev);
+
     RawEventCallback    m_callback;
+    ReceiverMode        m_mode;
     int                 m_auditFd;
     int                 m_epollFd;
     std::atomic<bool>   m_running;
