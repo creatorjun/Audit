@@ -7,6 +7,8 @@
 #include <condition_variable>
 #include <queue>
 #include <atomic>
+#include <unordered_map>
+#include <chrono>
 
 class LogWriter {
 public:
@@ -14,6 +16,7 @@ public:
     ~LogWriter();
 
     void enqueue(const AuditRecord& record);
+    void enqueue(AuditRecord&& record);
     void stop();
 
 private:
@@ -24,6 +27,7 @@ private:
     std::string buildJson(const AuditRecord& r);
     std::string currentDateStr();
     std::string formatTimestamp(const timespec& ts);
+    const std::string& cachedUidName(uid_t uid);
 
     std::string                 m_logDir;
     int                         m_retentionDays;
@@ -37,4 +41,11 @@ private:
     std::condition_variable     m_cv;
     std::queue<AuditRecord>     m_queue;
     std::atomic<bool>           m_running;
+
+    struct CacheEntry {
+        std::string                             name;
+        std::chrono::steady_clock::time_point   expiresAt;
+    };
+    std::unordered_map<uid_t, CacheEntry>   m_uidCache;
+    static constexpr int UID_CACHE_TTL_S = 60;
 };
