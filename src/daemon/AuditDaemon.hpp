@@ -23,7 +23,7 @@ public:
 
     static bool loadConfig(const std::string& path, DaemonConfig& cfg);
     void run();
-    static void requestStop();
+    void requestStop();
 
 private:
     void writePid();
