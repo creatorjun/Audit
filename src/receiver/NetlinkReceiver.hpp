@@ -7,6 +7,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <queue>
+#include <ctime>
 
 enum class ReceiverMode {
     Standalone,
@@ -16,6 +17,7 @@ enum class ReceiverMode {
 struct AuditRawEvent {
     int         type;
     uint64_t    serial;
+    timespec    timestamp;
     std::string data;
 };
 
